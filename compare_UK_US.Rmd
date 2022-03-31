@@ -1,0 +1,140 @@
+---
+title: "Compare IL US"
+output:
+  html_document: default
+  word_document: default
+#output: powerpoint_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = TRUE)
+library(tidyverse)
+library(psych)
+library(sjPlot) 
+library(apaTables)
+library(TOSTER) #for equivalence testing
+library(bayestestR) #for equivalence testing
+library(parameters) # for equivalence testing
+library(see) #for equivalence plotting
+
+```
+
+
+
+```{r include=FALSE}
+rm(list = ls()) #clean workspace
+#set directory
+setwd ('C:/Users/44752/Work/ResearchProjects/CREDS/Overheating/Final_Prolific_Data')
+#read in data
+
+#set plotting defaults
+My_Theme = theme(
+  axis.title.x = element_text(size = 16),
+  axis.text.x = element_text(size = 14),
+    axis.title.y = element_text(size = 16),
+  axis.text.y=element_text(size=14),
+   strip.text = element_text(size = 16),
+  legend.text = element_text(size=14),
+  legend.title = element_text(size=14))
+
+US_parent<-read.csv("Data_US_Parent.csv", header=TRUE)
+US_not_parent<-read.csv("Data_US_Not_Parent.csv", header=TRUE)
+```
+
+
+
+```{r include=FALSE}
+#checking for parental responsibility
+#rename variables name
+# take all variables starting with Q9
+children_data<-names(US_parent %>% select (starts_with("Q9")))
+a<-str_replace(children_data, "Col3", "_Parent")
+b<-str_replace(a, "Col2", "_Age")
+c<-b %>% str_replace_all(c("Row2"="_0yrs", "Row3"="_1_2yrs", "Row4"="_3_5yrs", "Row5"="_6_10yrs", "Row6"="_11_17yrs", "Row7"= "_18_24yrs", "Row8"="_25_44yrs", "Row9"="_45_64yrs", "Row10"="_65_74yrs", "Row11"="_75_84yrs", "Row12"="_85+yrs" ))
+
+
+US_parent_2<-US_parent %>% rename_at (vars(children_data), ~c)
+#check that everyone has at least parental responsibility for one child that lives with them
+US_parent_2$Q9_Number_Children<-(US_parent_2 %>% select (ends_with("Parent"))) %>% rowSums()
+#this shows that xx respondents did not indicate parental responsibility which is weird as according to Prolific they should have children so we remove them
+index_no_parent<-which(US_parent_2$Q9_Number_Children==0)
+US_parent_3<-US_parent_2[-index_no_parent,]
+
+#same for US non_parent
+US_not_parent_2<-US_not_parent %>% rename_at (vars(children_data), ~c)
+#this should be zero as they should not have parental responsibility
+US_not_parent_2$Q9_Number_Children<-(US_not_parent_2 %>% select (ends_with("Parent"))) %>% rowSums()
+
+US_data<-rbind(US_parent_3, US_not_parent_2)
+#we have an indicator on whether someone is a parent based on Q9_Number_Children - if zero = no parent, if >1, parent
+US_data$Parent<-ifelse (US_data$Q9_Number_Children>0, "Yes", "No") %>% as.factor()
+
+```
+
+
+
+
+
+```{r  echo=FALSE}
+
+#calculate average overheating concern; set 5 to NA 
+
+US_data$MeanOverheating<-US_data %>% select(starts_with("Q23")) %>% mutate(across(.cols = everything(), ~ ifelse(.x==5, NA, .x)))%>% rowMeans()
+
+#exclude those who did not answer all overheating questions.
+US_data_2<-US_data[-which(is.na(US_data$MeanOverheating)),]
+
+```
+
+```{r}
+#read in UK data
+UK_parent<-read.csv("Data_UK_Parent.csv", header=TRUE)
+UK_not_parent<-read.csv("Data_UK_Not_Parent.csv", header=TRUE)
+```
+
+
+```{r include=FALSE}
+#checking for parental responsibility
+#rename variables name
+# take all variables starting with Q9
+children_data<-names(UK_parent %>% select (starts_with("Q9")))
+a<-str_replace(children_data, "Col3", "_Parent")
+b<-str_replace(a, "Col2", "_Age")
+c<-b %>% str_replace_all(c("Row2"="_0yrs", "Row3"="_1_2yrs", "Row4"="_3_5yrs", "Row5"="_6_10yrs", "Row6"="_11_17yrs", "Row7"= "_18_24yrs", "Row8"="_25_44yrs", "Row9"="_45_64yrs", "Row10"="_65_74yrs", "Row11"="_75_84yrs", "Row12"="_85+yrs" ))
+
+UK_parent_2<-UK_parent %>% rename_at (vars(children_data), ~c)
+#check that everyone has at least parental responsibility for one child that lives with them
+UK_parent_2$Q9_Number_Children<-(UK_parent_2 %>% select (ends_with("Parent"))) %>% rowSums()
+#this shows that 71 respondents did not indicate parental responsibility which is weird as according to Prolific they should have children so we remove them
+index_no_parent<-which(UK_parent_2$Q9_Number_Children==0)
+UK_parent_3<-UK_parent_2[-index_no_parent,]
+
+#same for UK non_parent
+UK_not_parent_2<-UK_not_parent %>% rename_at (vars(children_data), ~c)
+#this should be zero as they should not have parental responsibility
+UK_not_parent_2$Q9_Number_Children<-(UK_not_parent_2 %>% select (ends_with("Parent"))) %>% rowSums()
+
+UK_data<-rbind(UK_parent_3, UK_not_parent_2)
+#we have an indicator on whether someone is a parent based on Q9_Number_Children - if zero = no parent, if >1, parent
+UK_data$Parent<-ifelse (UK_data$Q9_Number_Children>0, "Yes", "No") %>% as.factor()
+
+```
+
+ 
+```{r  echo=FALSE}
+
+#calculate average overheating concern; set 5 to NA 
+
+UK_data$MeanOverheating<-UK_data %>% select(starts_with("Q23")) %>% mutate(across(.cols = everything(), ~ ifelse(.x==5, NA, .x)))%>% rowMeans()
+
+#exclude those who did not answer all overheating questions.
+UK_data_2<-UK_data[-which(is.na(UK_data$MeanOverheating)),]
+
+```
+#Compare mean overheating concern UK and US 
+
+```{r}
+t.test(US_data_2$MeanOverheating, UK_data_2$MeanOverheating, var=T)
+```
+
+

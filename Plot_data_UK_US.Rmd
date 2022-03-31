@@ -1,0 +1,57 @@
+---
+title: "PLotting UK - US"
+output:
+  word_document: default
+  html_document: default
+#output: powerpoint_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = TRUE)
+library(tidyverse)
+library(psych)
+library(sjPlot) 
+library(apaTables)
+library(ggpubr)
+
+```
+
+
+
+```{r include=FALSE}
+rm(list = ls()) #clean workspace
+#set directory
+setwd ('C:/Users/44752/Work/ResearchProjects/CREDS/Overheating/Final_Prolific_Data')
+#read in data
+#set plotting defaults
+My_Theme = theme(
+  axis.title.x = element_text(size = 16),
+  axis.text.x = element_text(size = 14),
+    axis.title.y = element_text(size = 16),
+  axis.text.y=element_text(size=14),
+   strip.text = element_text(size = 16),
+  legend.text = element_text(size=14),
+  legend.title = element_text(size=14))
+
+age_UK<-read.csv("Age_UK.csv")
+age_US<-read.csv("Age_US.csv")
+age<-rbind(age_UK, age_US)
+
+age_plot<-ggplot(age, aes(fill=Parent, y=per, x=Q12))+ 
+    geom_bar(position="dodge", stat="identity")+xlab("Age respondents")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")+facet_wrap(~Country)+My_Theme
+
+gender_UK<-read.csv("Gender_UK.csv")
+gender_US<-read.csv("Gender_US.csv")
+gender<-rbind(gender_UK, gender_US)
+
+
+gender_plot<-ggplot(gender, aes(fill=Parent, y=per, x=factor(Q11, level=c('Female', 'Male', 'In some other way', 'Prefer not to say'))))+ 
+    geom_bar(position="dodge", stat="identity")+xlab("Gender respondents")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")+facet_wrap(~Country)+My_Theme
+    
+   
+demographics_plot<-ggarrange(age_plot, NULL, gender_plot, nrow=3, heights=c(1, 0.05, 1), labels=c("A", "",  "B")) 
+
+ggsave(filename="Demographics_fig.tiff", plot=demographics_plot,  device='tiff', dpi=300)
+
+
+```

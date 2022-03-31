@@ -1,0 +1,911 @@
+---
+title: "Overheating US"
+output:
+  html_document: default
+  word_document: default
+#output: powerpoint_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = TRUE)
+library(tidyverse)
+library(psych)
+library(sjPlot) 
+library(apaTables)
+library(TOSTER) #for equivalence testing
+library(bayestestR) #for equivalence testing
+library(parameters) # for equivalence testing
+library(see) #for equivalence plotting
+
+```
+
+
+
+```{r include=FALSE}
+rm(list = ls()) #clean workspace
+#set directory
+setwd ('C:/Users/44752/Work/ResearchProjects/CREDS/Overheating/Final_Prolific_Data')
+#read in data
+
+#set plotting defaults
+My_Theme = theme(
+  axis.title.x = element_text(size = 16),
+  axis.text.x = element_text(size = 14),
+    axis.title.y = element_text(size = 16),
+  axis.text.y=element_text(size=14),
+   strip.text = element_text(size = 16),
+  legend.text = element_text(size=14),
+  legend.title = element_text(size=14))
+
+US_parent<-read.csv("Data_US_Parent.csv", header=TRUE)
+US_not_parent<-read.csv("Data_US_Not_Parent.csv", header=TRUE)
+```
+
+
+
+```{r include=FALSE}
+#checking for parental responsibility
+#rename variables name
+# take all variables starting with Q9
+children_data<-names(US_parent %>% select (starts_with("Q9")))
+a<-str_replace(children_data, "Col3", "_Parent")
+b<-str_replace(a, "Col2", "_Age")
+c<-b %>% str_replace_all(c("Row2"="_0yrs", "Row3"="_1_2yrs", "Row4"="_3_5yrs", "Row5"="_6_10yrs", "Row6"="_11_17yrs", "Row7"= "_18_24yrs", "Row8"="_25_44yrs", "Row9"="_45_64yrs", "Row10"="_65_74yrs", "Row11"="_75_84yrs", "Row12"="_85+yrs" ))
+
+
+US_parent_2<-US_parent %>% rename_at (vars(children_data), ~c)
+#check that everyone has at least parental responsibility for one child that lives with them
+US_parent_2$Q9_Number_Children<-(US_parent_2 %>% select (ends_with("Parent"))) %>% rowSums()
+#this shows that xx respondents did not indicate parental responsibility which is weird as according to Prolific they should have children so we remove them
+index_no_parent<-which(US_parent_2$Q9_Number_Children==0)
+US_parent_3<-US_parent_2[-index_no_parent,]
+
+#same for US non_parent
+US_not_parent_2<-US_not_parent %>% rename_at (vars(children_data), ~c)
+#this should be zero as they should not have parental responsibility
+US_not_parent_2$Q9_Number_Children<-(US_not_parent_2 %>% select (ends_with("Parent"))) %>% rowSums()
+
+US_data<-rbind(US_parent_3, US_not_parent_2)
+#we have an indicator on whether someone is a parent based on Q9_Number_Children - if zero = no parent, if >1, parent
+US_data$Parent<-ifelse (US_data$Q9_Number_Children>0, "Yes", "No") %>% as.factor()
+
+```
+
+
+## Checking if parental responsibility consistent
+
+Two surveys had been set up, once with the inclusion criteria of being a parent and once with the inclusion criteria of not being a parent based on Prolific's demographic data.
+Initial sample sizes were: N = `r nrow(US_parent)` for the US parent survey and N = `r nrow(US_not_parent)` for the US non-parent survey.
+All respondents were asked if they had parental responsibility in the survey. 
+As per pre-registration, those who had been screened by Prolific to have children but then did not tick the box of any parental responsibility, were excluded. Slighty surprisingly, this was a relatively high number of `r length(which(US_parent_2$Q9_Number_Children==0))` respondents who been prescreened to be parents but then did not pick any parental responsibility for a child under 18 years. They were excluded from further analysis.
+Regarding the opposite, someone having been prescreened to NOT have parental responsibility but then ticking having parental responsibility which was the case for `r length(which(US_not_parent_2$Q9_Number_Children>0))` respondents, we assumed they might have become parents after having initially registered on Prolific and did not update their background information and they were hence retained in the analysis. 
+
+
+
+```{r  echo=FALSE}
+
+#calculate average overheating concern; set 5 to NA 
+
+US_data$MeanOverheating<-US_data %>% select(starts_with("Q23")) %>% mutate(across(.cols = everything(), ~ ifelse(.x==5, NA, .x)))%>% rowMeans()
+
+#exclude those who did not answer all overheating questions.
+US_data_2<-US_data[-which(is.na(US_data$MeanOverheating)),]
+
+#check internal consistency
+overheating_data<-US_data_2 %>% select(starts_with("Q23")) %>% mutate(across(.cols = everything(), ~ ifelse(.x==5, NA, .x)))
+cronbach_over<-alpha(overheating_data)
+```
+
+## Removal of those with incomplete data on overheating questions
+
+N = `r length(which(is.na(US_data$MeanOverheating)))` were removed as they had incomplete data on the overheating questions, meaning that a sample size of the full US was N = `r nrow(US_data_2)`. 
+
+The internal consistency can be considered to form a reliable scale. Alpha was = 0.93 (95% CI: 0.92 - 0.94). 
+
+```{r include=FALSE}
+cronbach_over
+```
+Hence, the mean overheating concern was used as outcome variable. 
+It was `r round(mean(US_data_2$MeanOverheating, na.rm=T), digits=2)` (SD= `r round(sd(US_data_2$MeanOverheating, na.rm=T), digits=2)`). The median was `r round(median(US_data_2$MeanOverheating, na.rm=T), digits=2)`. 
+
+The data were skewed towards low overheating concern: 
+```{r echo=FALSE}
+ hist(US_data_2$MeanOverheating)
+```
+
+
+# Results
+
+## Testing Hypothesis 1
+
+For testing Hypothesis 1, a t-test for two independent means will be used (to detect small effect of d = 0.25). A sample size of N = 417 is needed in each group (i.e. parents and non-parents), leading to a total sample size of N = 834 per survey. 
+This analysis was done on the full sample of N = `r nrow(US_data_2)`.
+
+
+```{r include=FALSE}
+H1=t.test(MeanOverheating ~ Parent, data = US_data_2, var.equal=T)
+wilcox.test(MeanOverheating ~ Parent, data = US_data_2)
+```
+Hypothesis 1 was not confirmed - indeed, parents had lower overheating concerns than non-parents though the difference was small. 
+
+```{r echo=FALSE}
+H1
+```
+
+
+
+## Testing Hypothesis 2
+
+Hypothesis 2 postulates that mothers are more worried about overheating than fathers or those without children. 
+To test hypothesis 2, ordinary least squares regression (OLS) will be used. Parental status will be coded as a categorical predictor with levels “mother”, “father”, “woman, no children”, “man, no children”, “other, non-parent”, and  “other, parent”, with the latter categories encompassing those who do not specify their gender as male or female. If there are fewer than 25 individuals in either “other” category, the two ‘other’ categories will be merged; if the generic ‘other’ category  still has a count below 25,  the participants falling into it will be excluded from this analysis. “Mother” will be the reference category. The sample size is estimated to be N = 934 to detect a small effect (f = 0.02). 
+
+Inspection of the gender variable showed a small number of "other" entries; too small to make their own category and hence excluded.
+`r table(US_data_2$Q11)`
+
+```{r echo=FALSE}
+#remove other / prefer not to say from gender question
+other_gender<-which(US_data_2$Q11 =="In some other way" | US_data_2$Q11=="Prefer not to say")
+
+US_data_H2<-US_data_2[-other_gender, ]
+
+#code as mother, father, woman no children, man no children
+
+
+US_data_H2<-US_data_H2 %>% mutate (
+          ParentGender = case_when(
+          Q9_Number_Children>0 & Q11=="Female" ~ "Mother",
+          Q9_Number_Children>0 & Q11=="Male" ~ "Father",
+           Q9_Number_Children==0 & Q11=="Female" ~ "Woman, no child",
+           Q9_Number_Children==0 & Q11=="Male" ~ "Man, no child",
+           TRUE~ 'NA_real_'
+           ))
+#set mother as reference category
+US_data_H2$ParentGender<-factor(US_data_H2$ParentGender, levels = c("Mother", "Father", "Woman, no child","Man, no child"))
+
+
+ H2_OLS<-lm (MeanOverheating~ParentGender, data = US_data_H2)
+ 
+  apa.reg.table(H2_OLS, filename="H2_US.doc", table.number=1,prop.var.conf.level = 0.95) 
+  
+   #equivalence testing
+ equivalence_test(H2_OLS)
+ 
+# plot method
+if (require("see", quietly = TRUE)) {
+  result <- equivalence_test(H2_OLS)
+  plot(result)
+}
+
+```
+Hypothesis 2 was not supported by the data. Mothers were not more concerned about overheating. In fact, men without children had a higher overheating concern. 
+
+```{r echo=FALSE}
+ summary(H2_OLS)
+summary(US_data_H2$ParentGender)
+tab_model(H2_OLS, show.reflvl = TRUE, file="H2_OLS_US_tabmodel.doc")
+
+```
+
+
+## Testing Hypothesis 3
+
+Hypothesis 3 splits parenting status up depending on the age of children and states that overheating worried is greater amongst parents of young children (0-2 years) than parents of older children and non-parents given that younger children are particularly affected by overheating. 
+To test hypothesis 3, parental status is split into five groups depending on age of children: parents with children aged 0-2 years, parents with children aged 3-5 years, parents with children aged 6-10 years, parents with children aged 11-17 years, and non-parents. Reference category is parents with children aged 0-2 years. 
+```{r include=FALSE}
+#code a variable that has parental status and age of children
+US_data_2<-US_data_2 %>% mutate (
+  AgeYoungest=case_when
+  (Q9_0yrs_Parent==1 ~ "O_2_years",
+    Q9_1_2yrs_Parent==1 ~  "O_2_years",
+    Q9_3_5yrs_Parent==1 & Q9_1_2yrs_Parent==0 & Q9_0yrs_Parent==0 ~ "3_5_years",
+    Q9_6_10yrs_Parent==1 & Q9_1_2yrs_Parent==0 & Q9_3_5yrs_Parent==0 & Q9_0yrs_Parent==0 ~ "6_10_years",
+   Q9_11_17yrs_Parent==1 & Q9_6_10yrs_Parent==0 & Q9_1_2yrs_Parent==0 & Q9_3_5yrs_Parent==0 & Q9_0yrs_Parent==0  ~ "11_17_years")
+)
+
+US_data_2$AgeYoungest<-fct_explicit_na(US_data_2$AgeYoungest, "No_child")
+
+#set youngest as reference category
+US_data_2$AgeYoungest<-factor(US_data_2$AgeYoungest, levels = c("O_2_years", "3_5_years", "6_10_years","11_17_years", "No_child"))
+
+
+ H3_OLS<-lm (MeanOverheating~AgeYoungest, data=US_data_2)
+ apa.reg.table(H3_OLS, filename="H3_US.doc", table.number=4,prop.var.conf.level = 0.95) 
+  #equivalence testing
+ equivalence_test(H3_OLS)
+ 
+# plot method
+if (require("see", quietly = TRUE)) {
+  result <- equivalence_test(H3_OLS)
+  plot(result)
+}
+
+```
+
+Hypothesis 3 was also not confirmed. In fact, those without children again showersignificantly higher overheating concern.  
+```{r echo=FALSE}
+summary(H3_OLS)
+summary(US_data_2$AgeYoungest)
+tab_model(H3_OLS, show.reflvl = TRUE,  file="H3_OLS_US_tabmodel.doc")
+```
+
+
+
+## Testing Hypothesis 4
+
+Hypothesis 4 a tests uptake of air-conditioning. In the US, if a respondent already has an AC system, they are asked about the likelihood to upgrade it; if they don’t have it, they are asked about the likelihood of getting an AC system. The measures will be combined into a single variable expressing likelihood of getting (more) AC. Hypothesis 4 b about uptake of electric fans is only tested in the UK given how prevalent they already are in the US. Hypotheses 4c about the uptake of external shading is only tested amongst those whose tenure is “owner” as those who rent a property are likely not allowed to add external shading to their home.
+
+```{r include=FALSE}
+#H4a, uptake of AC
+#put the ones who already have it to NA
+#look at current prevalence
+prevalence_AC<-table(US_data_2$Q26)
+#no response from two people;hence put to NA
+US_data_2$Q26[US_data_2$Q26==""]<-NA
+#also in Q27
+US_data_2$Q27[US_data_2$Q26==""]<-NA
+#put those who otherwise skipped Q27 as they have an AC to NA
+US_data_2$Q27[US_data_2$Q27==""]<-NA
+#also the one who said already have it
+US_data_2$Q27[US_data_2$Q27=="Not applicable, already have it"]<-NA
+#those who already had AC are asked whether they will upgrade it / get an additional AC
+#set those missing to NA, these are the ones who answered Q27 instead or did not answer
+US_data_2$Q28[US_data_2$Q28==""]<-NA
+#combine them into one variable
+US_data_2$AC_combined<-US_data_2$Q27
+US_data_2$AC_combined[is.na(US_data_2$Q27)]<-US_data_2$Q28[is.na(US_data_2$Q27)]
+#recode this into numeric
+
+US_data_2$AC_combined_Numeric<-US_data_2$AC_combined %>% recode(., "1(Very unlikely)" = 1,"2"=2, "3"= 3, "4"= 4, "5"=5, "6"=6, "7(Very likely)"=7)
+
+
+AC<-US_data_2 %>% select(c("Parent", "AC_combined")) %>% group_by(Parent, AC_combined) %>% summarize(Count=n()) %>% ungroup()
+ggplot(AC, aes(fill=Parent, y=Count, x=AC_combined)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Likelihood of getting / upgrading an AC")+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#then do a t-test 
+t.test(AC_combined_Numeric ~ Parent, data = US_data_2, var.equal=T)
+```
+Hypothesis 4a was confirmed: Parents significantly more likely to get / upgrade an AC in the next three years. 
+
+```{r echo=FALSE}
+t.test(AC_combined_Numeric ~ Parent, data = US_data_2, var.equal=T)
+AC_info<-US_data_2 %>% group_by(Parent) %>%
+  summarize(n(), mean_AC = mean(AC_combined_Numeric, na.rm = TRUE),
+            sd_AC = sd(AC_combined_Numeric, na.rm = TRUE))
+```
+
+
+
+
+
+```{r include=FALSE}
+#testing H4c. Uptake of shading but only amongst home owners
+# so first select Own outright" and "Own with a mortgage / loan" through variable Q4
+owners_only<- subset(US_data_2, Q4=="Own with a mortgage / loan" | Q4 == "Own outright")
+#remove empty cells
+owners_only$Q25[owners_only$Q25=='']<-NA
+#recode as this was error in survey; 1 and 2 were swapped
+owners_only$Q25<-owners_only$Q25 %>% recode(., "2(Very unlikely)" = "1(Very unlikely)","1"="2")
+
+shading<-owners_only %>% select(c("Parent", "Q25")) %>% group_by(Parent, Q25) %>% summarize(Count=n()) %>% ungroup()
+ggplot(shading, aes(fill=Parent, y=Count, x=Q25)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Likelihood of getting external shading")+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#recode into numeric - now make 1 and 2 both 1.5
+owners_only$Q25_Numeric<-owners_only$Q25 %>% recode(., "1(Very unlikely)" = 1.5,"2"=1.5, "3"= 3, "4"= 4, "5"=5, "6"=6, "7(Very likely)"=7)
+
+#then do a t-test 
+t.test(Q25_Numeric ~ Parent, data = owners_only, var.equal=T)
+```
+Hypothesis 4c was only tested on home owners of which there `r nrow(owners_only)`.
+
+Hypothesis 4c was not confirmed; parents were not more likely to say they would install external shading than non-parents, though to difference was close to significance. 
+
+```{r echo=FALSE}
+t.test(Q25_Numeric ~ Parent, data = owners_only, var.equal=T)
+shade_info<-owners_only %>% group_by(Parent) %>%
+  summarize(n(), mean_shade = mean(Q25_Numeric, na.rm = TRUE),
+            sd_shade = sd(Q25_Numeric, na.rm = TRUE))
+
+TOSTtwo(m1=pull(shade_info[1,3]),m2=pull(shade_info[2,3]),sd1=pull(shade_info[1,4]),sd2=pull(shade_info[2,4]),n1=pull(shade_info[1,2]),n2=pull(shade_info[2, 2]),low_eqbound_d=-0.25, high_eqbound_d=0.25, alpha = 0.05, var.equal=TRUE)
+```
+
+
+
+## Testing Hypothesis 5
+Hypothesis 5 states that the number of mitigation options to fight overheating is higher in parents than non-parents on a normal summer day (Hypothesis 5a) and during a heatwave (Hypothesis 5b). All testing will be carried out two-sided. The questions are only asked to those respondents who experience overheating as elicited in Q20 and Q21
+```{r include=FALSE}
+#these data are in Q22, Col2 for normal summer day, and Col3 for heatwave.
+normal_summer<-names(US_data_2 %>% select (starts_with("Q22")) %>% select(ends_with("Col2")))
+#calculate row sums to get the number of actions taken
+US_data_2$normal_actions<-rowSums(US_data_2[,normal_summer])
+#now, need to put those had had said "no" in Q20 to NA - Opinio had scored them all as zero instead of NA.
+US_data_2$normal_actions[US_data_2$Q20=="No. "]<-NA
+
+#same for heatwaves
+heatwave_summer<-names(US_data_2 %>% select (starts_with("Q22")) %>% select(ends_with("Col3")))
+#calculate row sums to get the number of actions taken
+US_data_2$heatwave_actions<-rowSums(US_data_2[,heatwave_summer])
+#now, need to put those had had said "no" in Q21 to NA - Opinio had scored them all as zero instead of NA.
+US_data_2$heatwave_actions[US_data_2$Q21=="No. "]<-NA
+#
+
+```
+There were `r length(which(is.na(US_data_2$normal_actions)))` respondents who did not experience any overheating during a normal summer and `r length(which(is.na(US_data_2$heatwave_actions)))` who did not experience overheating during a heatwave. These were not asked about what coping actions they took and were hence excluded from further analysis. 
+
+The mean number of actions taken in a normal summer to cope with overheating were M = `r mean(US_data_2$normal_actions, na.rm=T)` and Median `r median(US_data_2$normal_actions, na.rm=T)`. DUring a heatwave, these numbers were somewhat higher with a mean of `r mean(US_data_2$heatwave_actions, na.rm=T)` and a median of `r median(US_data_2$heatwave_actions, na.rm=T)`. 
+
+
+
+```{r include=FALSE}
+#test the hypothesis using Poission regression
+normal <- glm(normal_actions ~ Parent, data = US_data_2, family = poisson(link = "log"))
+summary(normal)
+
+heatwave <- glm(heatwave_actions ~ Parent, data = US_data_2, family = poisson(link = "log"))
+summary(heatwave)
+
+US_data_2 %>%
+    group_by(Parent) %>%
+    summarise_at(vars(heatwave_actions), list(name = mean), na.rm=T)
+
+US_data_2 %>%
+    group_by(Parent) %>%
+    summarise_at(vars(normal_actions), list(name = mean), na.rm=T)
+```
+```{r echo=FALSE}
+US_data_2 %>%
+    group_by(Parent) %>%
+    summarise_at(vars(heatwave_actions), list(name = mean, sd = sd), na.rm=T)
+
+US_data_2 %>%
+    group_by(Parent) %>%
+    summarise_at(vars(normal_actions), list(name = mean, sd= sd), na.rm=T)
+
+summary(normal)
+summary(heatwave)
+ tab_model(normal, show.reflvl = TRUE,  file="H5_Normal_UK_tabmodel.doc")
+  tab_model(heatwave, show.reflvl = TRUE,  file="H5_Heatwave_UK_tabmodel.doc")
+```
+
+
+
+
+```{r echo=FALSE}
+#plot this
+
+normal_df<-US_data_2 %>% select(c("Parent", "normal_actions")) %>% group_by(Parent, normal_actions) %>% summarize(Count=n()) %>% ungroup()
+normal_df$Season<-"Normal"
+
+heatwave_df<-US_data_2 %>% select(c("Parent", "heatwave_actions")) %>% group_by(Parent, heatwave_actions) %>% summarize(Count=n()) %>% ungroup()
+heatwave_df$Season<-"Heatwave"
+
+normal_df<-rename(normal_df, Actions=normal_actions)
+
+heatwave_df<-rename(heatwave_df, Actions=heatwave_actions)
+
+actions_combined<-rbind(normal_df, heatwave_df)
+
+
+
+action_plot<-ggplot(actions_combined, aes(fill=Parent, y=Count, x=Actions)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Number of actions taken against overheating (US)")+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+facet_wrap(~Season)+ylim(0,70)+My_Theme
+
+ggsave(filename="ActionsOverheating_US_fig.tiff", width=10, height=9, plot=action_plot,  device='tiff', dpi=300)
+```
+This plot shows the frequency of actions split up by parental status and normal summer and heatwave events. 
+
+## Exploring other variables
+
+Q24 asked to indicate why you are concerned about overheating in your home. If you are concerned for someone else,
+please explain for whom (e.g "my partner", "my child", "my grandparents"). Please only consider those living in your
+household. There were no hypothesis for this variable.
+This question was only asked to those who did not say "never / rarely" to all questions on overheating concerns which would mean they were not concerned about overheating. This was the case for `r length(which(rowSums(overheating_data)==6))` respondents. 
+
+
+```{r echo=FALSE}
+#select variables
+Q24_names<-US_data_2 %>% select(starts_with("Q24")) %>% names()
+
+c<-Q24_names %>% str_replace_all(c("Q24Row2Col2"="Q24_HealthImpacts_Myself", "Q24Row3Col2"="Q24_HealthImpacts_Others", "Q24Row3Col3"="Q24_HealthImpacts_Who", "Q24Row4Col2"="Q24_SleepDisruption_Myself", "Q24Row5Col2"="Q24_SleepDisruption_Others", "Q24Row5Col3"= "Q24_SleepDisruption_Who", "Q24Row6Col2"="Q24_Discomfort_Myself", "Q24Row7Col2"="Q24_Discomfort_Others", "Q24Row7Col3"="Q24_Discomfort_Who", "Q24Row8Col2"="Q24_Productivity_Myself", "Q24Row9Col2"="Q24_Productivity_Others", "Q24Row9Col3"="Q24_Productivity_Who", "Q24Row10Col2"="Q24_OtherReason",  "Q24Row10Col3"="Q24_OtherReason_What", "Q24Row11Col2" ="Q24_Prefer not to say"))
+
+#some respondents did not see this question as they had no overheating concern; however, as above, Opinio just sets this to zero and not to NA; hence, we now subset the df 
+
+US_data_2<-US_data_2 %>% rename_at (vars(Q24_names), ~c)
+
+
+myself_freq<-US_data_2 %>% subset(MeanOverheating!=1) %>% select(starts_with("Q24")) %>% select(ends_with("_Myself"))  %>% colSums
+other_freq<-US_data_2 %>% subset(MeanOverheating!=1) %>% select(starts_with("Q24")) %>% select(ends_with("_Others"))  %>% colSums
+
+#calculate this as percentage for plotting
+myself_percent<-round(myself_freq/sum(myself_freq)*100, digits=2)
+other_percent<-round(other_freq/sum(other_freq)*100, digits=2)
+
+#rename and rearrange this to allow for plotting
+myself<- data.frame(matrix(myself_percent, nrow=4, ncol=1)) 
+colnames(myself)<-c("Percentage")
+myself$Who<-"Myself"
+myself$What<-c("Health", "Sleep", "Discomfort", "Productivity")
+
+other<- data.frame(matrix(other_percent, nrow=4, ncol=1)) 
+colnames(other)<-c("Percentage")
+other$Who<-"Others"
+other$What<-c("Health", "Sleep", "Discomfort", "Productivity")
+
+combined<-rbind(myself, other)
+
+ggplot(combined, aes(fill=Who, y=Percentage, x=What)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Concern")
+
+
+```
+This graph shows what the main concerns were about overheating. 
+
+
+```{r include=FALSE}
+#analyze who the others were and make everything lower case, remove my and the and change to same used terms; again subset to remove those withzero overheating concerns
+who_Q24<-US_data_2 %>% subset(MeanOverheating!=1) %>% select(starts_with("Q24")) %>% select(ends_with("_Who"))%>% mutate_all(., .funs=tolower) %>% mutate_all(str_replace_all, "my", "") %>% mutate_all(str_replace_all, "the", "") %>% mutate_all(str_replace_all, "our", " ") %>% mutate_all(str_replace_all, "children", "child") %>% mutate_all(str_replace_all, "daughter", "child") %>% mutate_all(str_replace_all, "son", "child") %>% mutate_all(str_replace_all, "infant", "baby") %>% mutate_all(str_replace_all, "newborn", "baby") %>% mutate_all(str_replace_all, "kids", "child") %>% mutate_all(str_replace_all, "pets", "pet") %>% mutate_all(str_replace_all, "dog", "pet") %>% mutate_all(str_replace_all, "cat", "pet")%>%  mutate_all(str_replace_all, "animals", "pet") %>% mutate_all(str_replace_all, "husband", "partner")%>% mutate_all(str_replace_all, "spouse", "partner")%>% mutate_all(str_replace_all, "wife", "partner") %>% mutate_all(str_replace_all, "mum", "parents")%>% mutate_all(str_replace_all, "dad", "parents")%>% mutate_all(str_replace_all, "in law", "parents")%>% mutate_all(str_replace_all, "toddlers", "child")%>% mutate_all(str_replace_all, "grandparent$", "grandparents")%>% mutate_all(str_replace_all, "parentss", "parents")%>% mutate_all(str_replace_all, " toddlers", "child")%>% mutate_all(str_replace_all, " grama", "grandparents")%>% mutate_all(str_replace_all, " grandmor", "grandparents")%>% mutate_all(str_replace_all, " mor", "parents")%>% mutate_all(str_replace_all, " childs", "child") %>% mutate_all(str_replace_all, " mor-in-law", "parent") %>% mutate_all(str_replace_all, " far", "parent") %>% mutate_all(str_replace_all, " family", "all")%>% mutate_all(str_replace_all, " everybody", "all")%>% mutate_all(str_replace_all, " household", "all")
+
+#then we count the occurence of certain terms
+#set up dataframe for it
+Impact<-c("Discomfort", "Health", "Productivity", "Sleep")%>% rep(., 1, each=6)
+Who<-(c("Baby", "Child", "Partner", "Parent", "Grandparent", "Pet")) %>% rep(., 4, each =1)
+Count<-rep(NA, 24)
+#combine into DF
+df_Impact<-data.frame(Impact, Who, Count)
+
+df_Impact$Count[1]<-length(which(str_detect(who_Q24$Q24_Discomfort_Who, "baby")==T))
+df_Impact$Count[2]<-length(which(str_detect(who_Q24$Q24_Discomfort_Who, "child")==T))
+df_Impact$Count[3]<-length(which(str_detect(who_Q24$Q24_Discomfort_Who, "partner")==T))
+df_Impact$Count[4]<-length(which(str_detect(who_Q24$Q24_Discomfort_Who, "parent")==T))
+df_Impact$Count[5]<-length(which(str_detect(who_Q24$Q24_Discomfort_Who, "grandparent")==T))
+df_Impact$Count[6]<-length(which(str_detect(who_Q24$Q24_Discomfort_Who, "pet")==T))
+
+
+df_Impact$Count[7]<-length(which(str_detect(who_Q24$Q24_Productivity_Who, "baby")==T))
+df_Impact$Count[8]<-length(which(str_detect(who_Q24$Q24_HealthImpacts_Who, "child")==T))
+df_Impact$Count[9]<-length(which(str_detect(who_Q24$Q24_HealthImpacts_Who, "partner")==T))
+df_Impact$Count[10]<-length(which(str_detect(who_Q24$Q24_HealthImpacts_Who, "parent")==T))
+df_Impact$Count[11]<-length(which(str_detect(who_Q24$Q24_HealthImpacts_Who, "grandparent")==T))
+df_Impact$Count[12]<-length(which(str_detect(who_Q24$Q24_HealthImpacts_Who, "pet")==T))
+
+df_Impact$Count[13]<-length(which(str_detect(who_Q24$Q24_Productivity_Who, "baby")==T))
+df_Impact$Count[14]<-length(which(str_detect(who_Q24$Q24_Productivity_Who, "child")==T))
+df_Impact$Count[15]<-length(which(str_detect(who_Q24$Q24_Productivity_Who, "partner")==T))
+df_Impact$Count[16]<-length(which(str_detect(who_Q24$Q24_Productivity_Who, "parent")==T))
+df_Impact$Count[17]<-length(which(str_detect(who_Q24$Q24_Productivity_Who, "grandparent")==T))
+df_Impact$Count[18]<-length(which(str_detect(who_Q24$Q24_Productivity_Who, "pet")==T))
+
+df_Impact$Count[19]<-length(which(str_detect(who_Q24$Q24_SleepDisruption_Who, "baby")==T))
+df_Impact$Count[20]<-length(which(str_detect(who_Q24$Q24_SleepDisruption_Who, "child")==T))
+df_Impact$Count[21]<-length(which(str_detect(who_Q24$Q24_SleepDisruption_Who, "partner")==T))
+df_Impact$Count[22]<-length(which(str_detect(who_Q24$Q24_SleepDisruption_Who, "parent")==T))
+df_Impact$Count[23]<-length(which(str_detect(who_Q24$Q24_SleepDisruption_Who, "grandparent")==T))
+df_Impact$Count[24]<-length(which(str_detect(who_Q24$Q24_SleepDisruption_Who, "pet")==T))
+
+
+plot_impact<-ggplot(df_Impact, aes(fill=Who, y=Count, x=Impact)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Area of concern")+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r echo=FALSE}
+plot_impact
+```
+```{r}
+#now, only look at those who are parents to test if parents with health concerns had higher overheating concerns - note that this includes those without any overheating concern - if we want to exclude them add: %>% subset(MeanOverheating!=1) 
+df_parent<-US_data_2 %>% subset(Parent=="Yes") %>% subset(MeanOverheating!=1) 
+parent_Q24<-df_parent %>% select(starts_with("Q24")) %>% select(ends_with("_Who")) %>% mutate_all(., .funs=tolower) %>% mutate_all(str_replace_all, "my", "") %>% mutate_all(str_replace_all, "the", "") %>% mutate_all(str_replace_all, "our", " ") %>% mutate_all(str_replace_all, "children", "child") %>% mutate_all(str_replace_all, "daughter", "child") %>% mutate_all(str_replace_all, "son", "child") %>% mutate_all(str_replace_all, "infant", "baby") %>% mutate_all(str_replace_all, "newborn", "baby") %>% mutate_all(str_replace_all, "kids", "child") %>% mutate_all(str_replace_all, "pets", "pet") %>% mutate_all(str_replace_all, "dog", "pet") %>% mutate_all(str_replace_all, "cat", "pet")%>%  mutate_all(str_replace_all, "animals", "pet") %>% mutate_all(str_replace_all, "husband", "partner")%>% mutate_all(str_replace_all, "spouse", "partner")%>% mutate_all(str_replace_all, "wife", "partner") %>% mutate_all(str_replace_all, "mum", "parents")%>% mutate_all(str_replace_all, "dad", "parents")%>% mutate_all(str_replace_all, "in law", "parents")%>% mutate_all(str_replace_all, "toddlers", "child")%>% mutate_all(str_replace_all, "grandparent$", "grandparents")%>% mutate_all(str_replace_all, "parentss", "parents")%>% mutate_all(str_replace_all, " toddlers", "child")%>% mutate_all(str_replace_all, " grama", "grandparents")%>% mutate_all(str_replace_all, " grandmor", "grandparents")%>% mutate_all(str_replace_all, " mor", "parents")%>% mutate_all(str_replace_all, " childs", "child") %>% mutate_all(str_replace_all, " mor-in-law", "parent") %>% mutate_all(str_replace_all, " far", "parent") %>% mutate_all(str_replace_all, " family", "all")%>% mutate_all(str_replace_all, " everybody", "all")%>% mutate_all(str_replace_all, " household", "all") 
+new_parent_df<-cbind(df_parent$MeanOverheating, parent_Q24) %>%  rename ("MeanOverheating"="df_parent$MeanOverheating")
+#then, identify all the ones where in health children or babies are mentioned and give them label
+new_parent_df$ChildHealth[(str_detect(new_parent_df$Q24_HealthImpacts_Who, "child|baby")==T)] <-"Child"
+new_parent_df$ChildHealth[is.na(new_parent_df$ChildHealth)]<-"NoChild"
+#rename to overheating column - 
+```
+```{r}
+#then do t.test
+t.test(MeanOverheating ~ ChildHealth, data = new_parent_df, var.equal=T)
+new_parent_df %>%
+    group_by(ChildHealth) %>%
+    summarize(n(), mean = mean(MeanOverheating, na.rm = TRUE),
+            sd = sd(MeanOverheating, na.rm = TRUE))
+
+```
+We then selected only the subset of parents and compared overheating concerns between those who mentioned health impacts for any child and those who did not. Those who mentioned being concerned about overheating related health impacts for children had significantly higher overheating concerns. 
+Note that when limiting this analysis to those did not have overheating concern there was an even higher significant difference (notshown).
+
+
+```{r}
+t.test(MeanOverheating ~ ChildHealth, data = new_parent_df, var.equal=T)
+```
+
+
+```{r include=FALSE}
+#removeagain who had no overheating concern
+#how many other impact
+number_other_impact<-US_data_2 %>% subset(MeanOverheating!=1) %>% select(starts_with("Q24_OtherReason"))%>% select(-ends_with("_What")) %>% sum()
+#replace some names
+other_Q24<-US_data_2 %>% subset(MeanOverheating!=1) %>% select(starts_with("Q24_OtherReason_What"))  %>% mutate_all(str_replace,  "children", "child") %>% mutate_all(str_replace_all, "daughter", "child") %>% mutate_all(str_replace_all, "son", "child") %>% mutate_all(str_replace_all, "infant", "baby") %>% mutate_all(str_replace_all, "newborn", "baby") %>% mutate_all(str_replace_all, "kids", "child") %>% mutate_all(str_replace_all, "pets", "pet") %>% mutate_all(str_replace_all, "dog", "pet") %>% mutate_all(str_replace_all, "cat", "pet")%>%  mutate_all(str_replace_all, "animals", "pet") %>% mutate_all(str_replace_all, "husband", "partner")%>% mutate_all(str_replace_all, "spouse", "partner")%>% mutate_all(str_replace_all, "wife", "partner") %>% mutate_all(str_replace_all, "mum", "parents")%>% mutate_all(str_replace_all, "dad", "parents")%>% mutate_all(str_replace_all, "in law", "parents")%>% mutate_all(str_replace_all, "toddlers", "child")%>% mutate_all(str_replace_all, "grandparent$", "grandparents")%>% mutate_all(str_replace_all, "parentss", "parents")%>% mutate_all(str_replace_all, "pig", "pet") 
+```
+
+`r number_other_impact` respondents gave "other reason for overheating concern". Those contained specific health consequences, children, mood and irratability,  pets.
+`r summary(as.factor(other_Q24))`
+
+
+## Reasons for not opening windows
+Q29: Are there ever times when you would like to open a window or door to keep cool, but you don't do it for one
+of these reasons? PLEASE TICK ALL THAT APPLY. This was asked to everyone.
+
+```{r include=FALSE}
+
+#rename the columns
+names_wind<-names(US_data_2 %>% select(starts_with("Q29")))
+US_data_2<- US_data_2 %>% rename (Q29_No = names_wind[1], Q29_Noise=names_wind[2], Q29_Pollution=names_wind[3], Q29_Weather=names_wind[4], Q29_Security=names_wind[5], Q29_Safety=names_wind[6], Q29_PetsIn=names_wind[7], Q29_PestsOut=names_wind[8], Q29_Difficult=names_wind[9], Q29_Impossible=names_wind[10], Q29_Other=names_wind[11])
+
+not_window<-colSums(US_data_2 %>% select(starts_with("Q29")) %>% select(-ends_with("pleasespecifyOther")), na.rm=T)
+#percentage of all yes answers
+not_window_yes<-colSums(US_data_2 %>% select(starts_with("Q29")) %>% select(-ends_with("pleasespecifyOther"))%>% select(-ends_with("No")), na.rm=T)
+
+not_window_yes_percent<-data.frame(round(not_window_yes/sum(not_window_yes)*100, digits=2))
+not_window_yes_percent<-not_window_yes_percent %>% rename(Percentage="round.not_window_yes.sum.not_window_yes....100..digits...2.")
+not_window_yes_percent$Reason<-names(not_window_yes) %>% str_replace("Q29_", "")
+#plot this
+plot_window<-not_window_yes_percent %>% mutate(Reason = fct_reorder(Reason, desc(Percentage))) %>% ggplot( aes(x=Reason, y=Percentage))+geom_bar(stat="identity", fill="steelblue")+
+  theme_minimal()
+
+
+```
+In total `r not_window[1]` chose No as an answer, meaning that `r nrow(US_data_2)-not_window[1]` gave one reason at least. In total, `r sum(not_window_yes)` answers were given. The two most common reasons were to keep pests out and noise from the outside.
+
+```{r echo=FALSE}
+plot_window
+```
+## What actions did people take against overheating
+```{r include=FALSE}
+e<-names(US_data_2 %>% select(starts_with("Q22Row")))
+f<-e %>% str_replace_all(c("Row20"="_Other", "Row2"="_OpenWindowDay", "Row3"="_OpenWindowNight", "Row4"="_OpenExternalDoors", "Row5"="_OpenInternalDoors", "Row6"="_UseAC", "Row7"= "_PortableFan", "Row8"="_FixedFan", "Row9"="_ExtractorFan", "Row10"="_InsideBlinds", "Row11"="_OutsideBlinds", "Row12"="_LightClothes", "Row13"="_LightBedding", "Row14"="_CoolDrinks", "Row15"="_CoolBathShower", "Row16"="_Rest", "Row17"="_AvoidCertainRooms", "Row18"="_GoOutside", "Row19"="_GoOtherBuilding"))
+g<-f %>% str_replace_all(c("Col2"="_Normal", "Col3"="_Heatwave"))
+
+
+US_data_reason<-US_data_2 %>% rename_at (vars(e), ~g)  %>% subset(Q21!="No. ") %>% subset(Q20!="No. ") 
+
+#select the data and calculate colSums; we are not reading in Q22FreeText at the moment, hence using the the underscore
+data_normal<-US_data_reason%>% select(starts_with("Q22_")) %>% select(ends_with("Normal")) %>% colSums()
+data_heatwave<-US_data_reason%>% select(starts_with("Q22_")) %>% select(ends_with("Heatwave")) %>% colSums() 
+
+
+#make this data frame to use for plotting
+normal<-data.frame(data_normal) %>%  rename(Count="data_normal")
+normal$Reason<-names(data_normal) %>% str_replace("Q22_", "") %>% str_replace("_Normal","")
+
+plot_normal<-normal  %>% mutate(Reason = fct_reorder(Reason, desc(Count))) %>% ggplot( aes(x=Reason, y=Count))+geom_bar(stat="identity", fill="steelblue")+
+  theme_minimal()+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +xlab("Actions normal summer")
+
+heatwave<-data.frame(data_heatwave) %>%  rename(Count="data_heatwave")
+heatwave$Reason<-names(data_heatwave) %>% str_replace("Q22_", "") %>% str_replace("_Heatwave", "")
+
+plot_heatwave<-heatwave  %>% mutate(Reason = fct_reorder(Reason, desc(Count))) %>% ggplot( aes(x=Reason, y=Count))+geom_bar(stat="identity", fill="red")+
+  theme_minimal()+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +xlab("Actions heatwave")
+
+#plot by parental status
+normal_parent<-data.frame(US_data_reason %>% subset(Parent=="Yes") %>% select(starts_with("Q22_")) %>% select(ends_with("Normal")) %>% colSums()) 
+normal_parent$Parent<-"Yes"
+#divide by number of parents to see how many parent have done these actions
+normal_parent$Percentage<-round(normal_parent[,1]/length(which((US_data_reason$Parent=="Yes")))*100, digits=2)
+normal_parent$Type<-"Normal summer"
+normal_parent<-tibble::rownames_to_column(normal_parent, "Action") 
+normal_parent$Action<-normal_parent$Action %>% str_replace("Q22_", "") %>% str_replace("_Normal", "")
+#same for non-parents
+normal_nonparent<-data.frame(US_data_reason %>% subset(Parent=="No") %>% select(starts_with("Q22_")) %>% select(ends_with("Normal")) %>% colSums()) 
+normal_nonparent$Parent<-"No"
+#divide by number of nonparents to see how many parent have done these actions
+normal_nonparent$Percentage<-round(normal_nonparent[,1]/length(which((US_data_reason$Parent=="No")))*100, digits=2)
+normal_nonparent$Type<-"Normal summer"
+normal_nonparent<-tibble::rownames_to_column(normal_nonparent, "Action") 
+normal_nonparent$Action<-normal_nonparent$Action %>% str_replace("Q22_", "") %>% str_replace("_Normal", "")
+#then same for heatwave
+Heatwave_parent<-data.frame(US_data_reason %>% subset(Parent=="Yes") %>% select(starts_with("Q22_")) %>% select(ends_with("Heatwave")) %>% colSums()) 
+Heatwave_parent$Parent<-"Yes"
+#divide by number of parents to see how many parent have done these actions
+Heatwave_parent$Percentage<-round(Heatwave_parent[,1]/length(which((US_data_reason$Parent=="Yes")))*100, digits=2)
+Heatwave_parent$Type<-"Heatwave"
+Heatwave_parent<-tibble::rownames_to_column(Heatwave_parent, "Action") 
+Heatwave_parent$Action<-Heatwave_parent$Action %>% str_replace("Q22_", "") %>% str_replace("_Heatwave", "")
+#same for non-parents
+Heatwave_nonparent<-data.frame(US_data_reason %>% subset(Parent=="No") %>% select(starts_with("Q22_")) %>% select(ends_with("Heatwave")) %>% colSums()) 
+Heatwave_nonparent$Parent<-"No"
+#divide by number of nonparents to see how many parent have done these actions
+Heatwave_nonparent$Percentage<-round(Heatwave_nonparent[,1]/length(which((US_data_reason$Parent=="No")))*100, digits=2)
+Heatwave_nonparent$Type<-"Heatwave"
+Heatwave_nonparent<-tibble::rownames_to_column(Heatwave_nonparent, "Action") 
+Heatwave_nonparent$Action<-Heatwave_nonparent$Action %>% str_replace("Q22_", "") %>% str_replace("_Heatwave", "")
+#now combine the four dataframes; except for the 2n column as the has different names 
+combined_action_parent<-rbind(normal_parent[,-2], normal_nonparent[,-2], Heatwave_parent[,-2], Heatwave_nonparent[,-2])
+
+p<-combined_action_parent %>% mutate (Action = fct_relevel (Action, "UseAC", "FixedFan", "ExtractorFan", "PortableFan", "LightBedding", "LightClothes",  "CoolBathShower", "CoolDrinks", "AvoidCertainRooms", "GoOtherBuilding", "GoOutside", "InsideBlinds", "OutsideBlinds", "OpenExternalDoors", "OpenInternalDoors", "OpenWindowDay", "OpenWindowNight", "Rest", "Other")) %>% ggplot( aes(fill=Parent, y=Percentage, x=Action)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Type of actions taken against overheating (US)")+theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust=1))+facet_wrap(~Type)+ylim(0,100)+My_Theme
+
+ggsave(filename="ActionsOverheating_US_ParentalStatus.tiff", width=12, height=9, plot=p,  device='tiff', dpi=300)
+#the column per has the percentage which is more useful as the underlying sample size between parents and non-parents differs 
+```
+
+```{r echo=FALSE}
+plot_normal
+plot_heatwave
+```
+
+```{r}
+#test if parents used AC more often than non-parents
+table(US_data_reason$Parent, US_data_reason$Q22_UseAC_Normal)
+prop.table(table(US_data_reason$Parent, US_data_reason$Q22_UseAC_Normal), margin=1)
+chisq.test(US_data_reason$Parent, US_data_reason$Q22_UseAC_Normal)
+
+table(US_data_reason$Parent, US_data_reason$Q22_UseAC_Heatwave)
+prop.table(table(US_data_reason$Parent, US_data_reason$Q22_UseAC_Heatwave), margin=1)
+chisq.test(US_data_reason$Parent, US_data_reason$Q22_UseAC_Heatwave)
+
+```
+
+
+
+
+## Demographics
+
+```{r echo=FALSE}
+#plot dwelling type by parent status - note categories differ to UK survey
+dwelling<-US_data_2 %>% select(c("Parent", "Q3")) %>% group_by(Parent, Q3) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+#the column per has the percentage which is more useful as the underlying sample size between parents and non-parents differs 
+ggplot(dwelling, aes(fill=Parent, y=per, x=Q3)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Dwelling type")+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_x_discrete(labels=c("A detached house / bungalow" = "Detached house", "Manufactured/mobile home" = "A manufactured/mobile home","A semi-detached house"="Semi-detached house", "A terraced house (including end terrace)"="Terraced house", "Other"="Other", "Apartment/flat"="An apartment/flat"))+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+
+
+#plot tenure by parent status 
+#categories differ to UK
+
+tenure<-US_data_2 %>% select(c("Parent", "Q4")) %>% group_by(Parent, Q4) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+
+ggplot(tenure, aes(fill=Parent, y=per, x=Q4)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Tenure")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+
+#plot location  by parent status 
+
+location<-US_data_2 %>% select(c("Parent", "Q5")) %>% group_by(Parent, Q5) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+
+ggplot(location, aes(fill=Parent, y=per, x=Q5)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Location")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+
+
+#plot building age  by parent status 
+
+building_age<-US_data_2 %>% select(c("Parent", "Q8")) %>% group_by(Parent, Q8) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+
+ggplot(building_age, aes(fill=Parent, y=per, x=Q8)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Building age")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+
+#someone home during summer
+home_summer<-US_data_2 %>% select(c("Parent", "Q10")) %>% group_by(Parent, Q10) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+
+ggplot(home_summer, aes(fill=Parent, y=per, x=Q10)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Home summer")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+#gender respondents
+gender_respondents<-US_data_2 %>% select(c("Parent", "Q11")) %>% group_by(Parent, Q11) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+#add country
+gender_respondents$Country<-"US"
+
+ggplot(gender_respondents, aes(fill=Parent, y=per, x=Q11)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Gender respondents")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+#save file
+write.csv(gender_respondents, "Gender_US.csv")
+
+#age respondents
+age_respondents<-US_data_2 %>% select(c("Parent", "Q12")) %>% group_by(Parent, Q12) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+age_respondents$Country<-"US"
+
+ggplot(age_respondents, aes(fill=Parent, y=per, x=Q12)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Age respondents")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+#save file
+write.csv(age_respondents, "Age_US.csv")
+#work status respondents
+work_respondents<-US_data_2 %>% select(c("Parent", "Q14")) %>% group_by(Parent, Q14) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+
+ggplot(work_respondents, aes(fill=Parent, y=per, x=Q14)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("Work status respondents")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+#health respondents - note, we could maket his continous 
+health_respondents<-US_data_2 %>% select(c("Parent", "Q15")) %>% group_by(Parent, Q15) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+
+ggplot(health_respondents, aes(fill=Parent, y=per, x=Q15)) + 
+    geom_bar(position="dodge", stat="identity")+xlab("General health respondents")+theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1))+ylab("Percent")
+
+#recode into numeric
+US_data_2$Q15_numeric<-US_data_2$Q15 %>% fct_recode("5"="Very good", "4"="Good", "3" = "Fair", "2"="Bad", "1"="Very bad",  NULL="Prefer not to say") %>% as.numeric()
+t.test(Q15_numeric~Parent, data=US_data_2)
+
+#develop worry scale - three items Q16, 17, 18, but their answer scales differ
+a<-US_data_2 %>% select(starts_with("Q16"), starts_with("Q17"), starts_with("Q18")) 
+#convert into factor
+b<-as.data.frame(unclass(a), stringsAsFactors = TRUE) 
+
+US_data_2$Q16_numeric<-b$Q16 %>% fct_recode("10"="10(Continously)", "0"="0(Never)", NULL="Prefer not to say") %>% as.numeric()
+US_data_2$Q17_numeric<-b$Q17 %>% fct_recode("10"="10(Very much)", "0"="0(Not at all)", NULL="Prefer not to say") %>% as.numeric()
+US_data_2$Q18_numeric<-b$Q18 %>% fct_recode("10"="10(Very much)", "0"="0(Not at all)", NULL="Prefer not to say") %>% as.numeric()
+
+
+#check internal consistency
+worry_data<-data.frame(US_data_2$Q16_numeric, US_data_2$Q17_numeric, US_data_2$Q18_numeric)
+cronbach_worry<-alpha(worry_data)
+
+US_data_2$MeanWorry<-rowMeans(worry_data)
+#plot and add mean line
+ggplot(US_data_2, aes(x=MeanWorry)) + geom_histogram()+xlim(0, 10)
+
+#split by parental status
+parental_worry<-US_data_2 %>% select(c("Parent", "MeanWorry")) %>% group_by(Parent, MeanWorry) %>% summarize(Count=n()) %>%  mutate(CountT= sum(Count))%>%  mutate(per=(round(100*Count/CountT,2))) %>% ungroup()
+
+ggplot(parental_worry, aes(x=per, color=Parent)) +
+  geom_histogram(fill="white", position="dodge")+
+  theme(legend.position="top")
+
+t.test(MeanWorry ~ Parent, data = US_data_2, var.equal=T)
+
+cor(US_data_2$MeanWorry, US_data_2$MeanOverheating, use = "complete.obs")
+
+```
+The Cronbachs alpha for the worry scale is acceptable with 0.85 (0.84-0.87). 
+Hence, we can create a mean worry measure.
+
+Parents are generally NOT more worried than non-parents but vice-versa. 
+
+Note that mean worry and mean overheating concern do correlation significantly but with a low correlation. So it is not that overheating concern is just a feature of general worry. 
+
+
+
+
+```{r include=FALSE}
+#relevel factors and set reference category
+US_data_2$Q3<-US_data_2$Q3 %>% as.factor() %>% fct_infreq()
+
+#merge other with live rentfree
+US_data_2$Q4 <-US_data_2$Q4 %>% as.factor() %>% fct_collapse("Other"=c("Live here rent-free", "Other")) %>% fct_infreq()
+
+#recode summer and heatwave overheating
+US_data_2$Q20 <-(US_data_2$Q20) %>%  as.factor() %>% fct_recode("Summer_MultipleRooms"="Yes, in multiple rooms but not all rooms. ", "Summer_AllRooms" = "Yes, in all rooms. ", "Summer_OneRoom"="Yes, in one room. ", "Summer_No"="No. ") %>% fct_relevel("Summer_No", "Summer_OneRoom", "Summer_MultipleRooms", "Summer_AllRooms")
+US_data_2$Q21 <-(US_data_2$Q21) %>%  as.factor() %>%  fct_recode("Heatwave_MultipleRooms"="Yes, in multiple rooms but not all rooms. ", "Heatwave_AllRooms" = "Yes, in all rooms. ", "Heatwave_OneRoom"="Yes, in one room. ", "Heatwave_No"="No. ") %>% fct_relevel("Heatwave_No", "Heatwave_OneRoom", "Heatwave_MultipleRooms", "Heatwave_AllRooms" )
+
+#work status - need to merge some category 
+US_data_2$Q14 <-(US_data_2$Q14) %>%  as.factor() %>%  fct_collapse("Not working other reason"=c("Not working for other reasons", "Not working because of longstanding disability or illness", "On maternity / paternity / shared parental  / adoption leave"), "Other"=c("Other", "Prefer not to say")) %>% fct_infreq()
+
+#merge two gender
+US_data_2$Q11 <-(US_data_2$Q11) %>%  as.factor() %>%  fct_recode (NULL="In some other way", NULL="Prefer not to say") %>% fct_infreq()
+
+US_data_2$Q12 <-(US_data_2$Q12) %>%  as.factor() %>%  fct_infreq()
+
+
+#run a linear regression
+#H1_OLS_full<-lm(US_data_2$MeanOverheating ~ US_data_2$Parent + US_data_2$Q3+US_data_2$Q4+US_data_2$MeanWorry)
+#adding overheating experience
+#H1_OLS_full_over<-lm(US_data_2$MeanOverheating ~ US_data_2$Parent + US_data_2$Q3+US_data_2$Q4+US_data_2$Q20+US_data_2$Q21)
+#and others
+#note that vif too high if includingboth overheating qusetions
+H1_complete<-lm(MeanOverheating ~ Parent + Q3+Q4+Q20+Q20+Q12+Q14+Q15_numeric, data =US_data_2)
+```
+
+
+```{r include=FALSE}
+tab_model(H1_complete,show.reflvl = F)
+equivalence_test(H1_complete)
+
+
+ H2_OLS_full<-lm (US_data_H2$MeanOverheating~US_data_H2$ParentGender+US_data_H2$Q3+US_data_H2$Q4)
+ H2_OLS_full_over<-lm (US_data_H2$MeanOverheating~US_data_H2$ParentGender+US_data_H2$Q3+US_data_H2$Q4+US_data_H2$Q20+US_data_H2$Q21)
+ 
+ H3_OLS_full<-lm (US_data_2$MeanOverheating~US_data_2$AgeYoungest+US_data_2$Q3+US_data_2$Q4)
+ 
+ #adding overheating experience
+ H3_OLS_full_over<-lm (US_data_2$MeanOverheating~US_data_2$AgeYoungest+US_data_2$Q3+US_data_2$Q4+US_data_2$Q20)
+```
+
+Tenure and dwelling type are quite differently distributed across the outcome variable. Hence, I reran the regression analyses for H1, H2, H3 using those as additional predictors. 
+
+## Hypothesis 1 retested
+
+The first one tested mean overheating concern using parental status, tenure, and dwelling as predictors. Parental status was not significant
+
+```{r echo=FALSE}
+#summary(H1_OLS_full)
+
+
+```
+We can add overheating experience which becomes an important predictor but parental status not.
+
+```{r echo=FALSE}
+tab_model(H1_complete)
+tab_model(H1_complete, show.reflvl = F, file="H1_FullModel_US_tabmodel.doc")
+```
+
+
+
+## Hypothesis 2 retested 
+
+Again, with overheating concern as outcome variable, but using tenure and dwelling type as additional predictors, we tested if gender and parental status combined played a significant role. The answer was no.
+
+```{r echo=FALSE}
+summary( H2_OLS_full)
+```
+Adding overheating experience
+```{r echo=FALSE}
+H2_OLS_full_over
+```
+
+##Hypothesis 3 retested
+
+Finally, using age of youngest plus tenure and dwelling type but again no effect.
+
+```{r}
+summary(H3_OLS_full)
+```
+
+Adding overheating experience
+
+
+```{r echo=FALSE}
+H3_OLS_full_over
+```
+
+## Are parents more likely to experience overheating
+The following two tables show this for normal summer and heatwaves. Parents less likely to say no to experiencing overheating. What is quite striking is how few people do not experience any overheating. 
+```{r echo=FALSE}
+#assessing if parents more likely to report overheating
+
+round(prop.table(table(US_data_2$Q20, US_data_2$Parent), 2), digit=2)
+
+round(prop.table(table(US_data_2$Q21, US_data_2$Parent), 2), digit=2)
+```
+## Does the experience of overheating relate to the concern about overheating?
+
+```{r include=FALSE}
+
+
+normal_mean<-US_data_2%>%
+  group_by(Q20) %>%
+  summarise_at(vars(MeanOverheating), list(name = mean))
+
+heatwave_mean<-US_data_2%>%
+  group_by(Q21) %>%
+  summarise_at(vars(MeanOverheating), list(name = mean))
+
+lm(US_data_2$MeanOverheating ~ US_data_2$Parent +US_data_2$Q20+US_data_2$Q21)
+```
+
+Yes, it strongly does. 
+
+```{r echo=FALSE}
+summary(lm(US_data_2$MeanOverheating ~ US_data_2$Parent +US_data_2$Q20+US_data_2$Q21))
+```
+
+
+## DOes dichotomizing overheating experience play a role?
+
+```{r include=FALSE}
+US_data_2$Q20_dichotomy2[US_data_2$Q20!="No. "]<-"Yes, overheating"
+
+US_data_2$Q20_dichotomy<-US_data_2$Q20 %>% fct_recode("No" = "No. ") %>% fct_recode("Yes"="Yes, in all rooms. ") %>% fct_recode ("Yes"="Yes, in multiple rooms but not all rooms. ") %>% fct_recode ("Yes"="Yes, in one room. ")
+
+
+lm_dicho <- lm(MeanOverheating ~ Parent + Q20_dichotomy,US_data_2)
+
+#tab_model(lm_dicho)
+
+
+
+```
+Regression results. Parent still not significant. 
+```{r echo=FALSE}
+summary(lm_dicho)
+```
+
